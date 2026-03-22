@@ -8,6 +8,7 @@ import { Upload, PackagePlus } from 'lucide-vue-next'
 import IdCell from '@/components/IdCell.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import ListPagination from '@/components/ListPagination.vue'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import TableSkeleton from '@/components/TableSkeleton.vue'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -18,6 +19,7 @@ import CardSecretBatchCreateModal from './components/CardSecretBatchCreateModal.
 
 const { t } = useI18n()
 const adminPath = import.meta.env.VITE_ADMIN_PATH || ''
+const pageSizeOptions = [20, 50, 100, 200]
 
 const productKeyword = ref('')
 const productOptions = ref<AdminProduct[]>([])
@@ -37,18 +39,17 @@ const batchPagination = ref({
   total: 0,
   total_page: 1,
 })
-const batchJumpPage = ref('')
 
 const cardSecrets = ref<AdminCardSecret[]>([])
 const cardSecretsLoading = ref(false)
 const cardSecretStatus = ref('__all__')
+const currentBatchFilter = ref<AdminCardSecretBatch | null>(null)
 const cardSecretPagination = ref({
   page: 1,
   page_size: 20,
   total: 0,
   total_page: 1,
 })
-const cardSecretJumpPage = ref('')
 
 const selectedSecretIds = ref<number[]>([])
 const batchStatusTarget = ref<'available' | 'reserved' | 'used'>('available')
@@ -116,6 +117,11 @@ const buildProductLabel = (product: AdminProduct | null | undefined) => {
 
 const currentProductId = computed(() => parseProductId())
 const currentSkuId = computed(() => parseSkuId())
+const currentBatchId = computed(() => {
+  const raw = Number(currentBatchFilter.value?.id || 0)
+  if (!Number.isFinite(raw) || raw <= 0) return 0
+  return Math.floor(raw)
+})
 
 const productHint = computed(() => {
   if (!currentProductId.value) return t('admin.cardSecrets.productHintEmpty')
@@ -142,6 +148,13 @@ const availableSkus = computed(() => {
 })
 
 const skuFilterDisabled = computed(() => !currentProductId.value || availableSkus.value.length === 0)
+const currentBatchFilterText = computed(() => {
+  if (!currentBatchFilter.value) return t('admin.cardSecrets.batchFilterAll')
+  return t('admin.cardSecrets.batchFilterCurrent', {
+    id: currentBatchFilter.value.id,
+    batchNo: currentBatchFilter.value.batch_no || '-',
+  })
+})
 
 const allCurrentPageSelected = computed(() => {
   if (cardSecrets.value.length === 0) return false
@@ -182,6 +195,20 @@ const resolveProductName = (productId: number) => {
   return getLocalizedText(option.title || {})
 }
 
+const buildBatchLabel = (batch: Partial<AdminCardSecretBatch> | null | undefined) => {
+  const id = Number(batch?.id || 0)
+  const batchNo = String(batch?.batch_no || '').trim()
+  if (id > 0 && batchNo) return `#${id} ${batchNo}`
+  if (id > 0) return `#${id}`
+  return batchNo || '-'
+}
+
+const resolveSecretBatchLabel = (secret: AdminCardSecret) => {
+  if (secret.batch) return buildBatchLabel(secret.batch)
+  if (secret.batch_id) return `#${secret.batch_id}`
+  return '-'
+}
+
 const productLink = (productId: number) => `${adminPath}/products?product_id=${productId}`
 const orderLink = (orderId: number) => `${adminPath}/orders?order_id=${orderId}`
 
@@ -209,6 +236,37 @@ const toggleSelectAllSecrets = () => {
   selectedSecretIds.value = cardSecrets.value
     .map((item: AdminCardSecret) => Number(item?.id || 0))
     .filter((item: number) => Number.isFinite(item) && item > 0)
+}
+
+const clearBatchFilter = () => {
+  currentBatchFilter.value = null
+}
+
+const clearBatchFilterAndRefresh = async () => {
+  clearBatchFilter()
+  await fetchCardSecrets(1)
+}
+
+const buildPlaceholderBatch = (batchID: number): AdminCardSecretBatch => ({
+  id: batchID,
+  product_id: currentProductId.value || 0,
+  sku_id: currentSkuId.value || 0,
+  name: '',
+  batch_no: '',
+  source: '',
+  note: '',
+  total_count: 0,
+  available_count: 0,
+  used_count: 0,
+  created_at: '',
+})
+
+const findBatchById = (batchID: number) => {
+  if (!Number.isFinite(batchID) || batchID <= 0) return null
+  if (currentBatchFilter.value && Number(currentBatchFilter.value.id || 0) === batchID) {
+    return currentBatchFilter.value
+  }
+  return batches.value.find((batch: AdminCardSecretBatch) => Number(batch?.id || 0) === batchID) || null
 }
 
 const loadProductOptions = async () => {
@@ -348,6 +406,9 @@ const fetchCardSecrets = async (page = 1) => {
       params.product_id = productId
       params.sku_id = currentSkuId.value || undefined
     }
+    if (currentBatchId.value) {
+      params.batch_id = currentBatchId.value
+    }
     const response = await adminAPI.getCardSecrets(params)
     cardSecrets.value = response.data.data || []
     cardSecretPagination.value = response.data.pagination || cardSecretPagination.value
@@ -371,6 +432,7 @@ const refreshAll = async () => {
 
   productInfo.value = null
   stats.value = null
+  clearBatchFilter()
   batches.value = []
   batchPagination.value = {
     page: 1,
@@ -396,10 +458,12 @@ const debouncedSearchProducts = useDebounceFn(handleSearchProducts, 300)
 
 const handleProductSelectionChange = async () => {
   skuFilterValue.value = '__all__'
+  clearBatchFilter()
   await refreshAll()
 }
 
 const handleSkuSelectionChange = async () => {
+  clearBatchFilter()
   await refreshAll()
 }
 
@@ -422,22 +486,16 @@ const changeSecretPage = (page: number) => {
   fetchCardSecrets(page)
 }
 
-const jumpBatchPage = () => {
-  if (!batchJumpPage.value) return
-  const raw = Number(batchJumpPage.value)
-  if (Number.isNaN(raw)) return
-  const target = Math.min(Math.max(Math.floor(raw), 1), batchPagination.value.total_page)
-  if (target === batchPagination.value.page) return
-  changeBatchPage(target)
+const changeBatchPageSize = (pageSize: number) => {
+  if (pageSize === batchPagination.value.page_size) return
+  batchPagination.value.page_size = pageSize
+  fetchBatches(1)
 }
 
-const jumpCardSecretPage = () => {
-  if (!cardSecretJumpPage.value) return
-  const raw = Number(cardSecretJumpPage.value)
-  if (Number.isNaN(raw)) return
-  const target = Math.min(Math.max(Math.floor(raw), 1), cardSecretPagination.value.total_page)
-  if (target === cardSecretPagination.value.page) return
-  changeSecretPage(target)
+const changeCardSecretPageSize = (pageSize: number) => {
+  if (pageSize === cardSecretPagination.value.page_size) return
+  cardSecretPagination.value.page_size = pageSize
+  fetchCardSecrets(1)
 }
 
 const applyBatchStatus = async () => {
@@ -511,30 +569,118 @@ const exportSelectedSecrets = async (format: 'txt' | 'csv') => {
 
   batchActionLoading.value = true
   try {
-    const response = await adminAPI.exportCardSecrets({
-      ids,
-      format,
-    })
-
-    const contentDisposition = String(response?.headers?.['content-disposition'] || '')
-    const filenameMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i)
-    const fallbackName = `card-secrets-${new Date().toISOString().replace(/[:.]/g, '-')}.${format}`
-    const filename = filenameMatch?.[1] || fallbackName
-
-    const contentType =
-      format === 'csv' ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8'
-    const blob = new Blob([response.data], { type: contentType })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    const response = await adminAPI.exportCardSecrets({ ids, format })
+    downloadExportFile(response, format)
 
     batchActionSuccess.value = t('admin.cardSecrets.success.batchExported', {
       count: ids.length,
+      format: format.toUpperCase(),
+    })
+  } catch (error: any) {
+    batchActionError.value = error?.message || t('admin.cardSecrets.errors.batchExportFailed')
+  } finally {
+    batchActionLoading.value = false
+  }
+}
+
+const downloadExportFile = (response: any, format: 'txt' | 'csv') => {
+  const contentDisposition = String(response?.headers?.['content-disposition'] || '')
+  const filenameMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i)
+  const fallbackName = `card-secrets-${new Date().toISOString().replace(/[:.]/g, '-')}.${format}`
+  const filename = filenameMatch?.[1] || fallbackName
+
+  const contentType = format === 'csv' ? 'text/csv;charset=utf-8' : 'text/plain;charset=utf-8'
+  const blob = new Blob([response.data], { type: contentType })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+const filterByBatch = async (batch: AdminCardSecretBatch) => {
+  currentBatchFilter.value = batch
+  clearBatchActionMessages()
+  await fetchCardSecrets(1)
+}
+
+const filterByBatchId = async (batchID: number) => {
+  if (!Number.isFinite(batchID) || batchID <= 0) return
+  const matchedBatch = findBatchById(Math.floor(batchID))
+  await filterByBatch(matchedBatch || buildPlaceholderBatch(Math.floor(batchID)))
+}
+
+const applyStatusForBatch = async (batch: AdminCardSecretBatch) => {
+  clearBatchActionMessages()
+  const confirmed = await confirmAction({
+    description: t('admin.cardSecrets.batch.confirmBatchStatus', {
+      id: batch.id,
+      batchNo: batch.batch_no || '-',
+      status: cardSecretStatusLabel(batchStatusTarget.value),
+    }),
+  })
+  if (!confirmed) return
+
+  batchActionLoading.value = true
+  try {
+    const response = await adminAPI.batchUpdateCardSecretStatus({
+      batch_id: batch.id,
+      status: batchStatusTarget.value,
+    })
+    const affected = Number(response?.data?.data?.affected || batch.total_count || 0)
+    batchActionSuccess.value = t('admin.cardSecrets.success.batchStatusUpdated', { count: affected })
+    await refreshAfterBatchMutations()
+  } catch (error: any) {
+    batchActionError.value = error?.message || t('admin.cardSecrets.errors.batchStatusFailed')
+  } finally {
+    batchActionLoading.value = false
+  }
+}
+
+const deleteSecretsByBatch = async (batch: AdminCardSecretBatch) => {
+  clearBatchActionMessages()
+  const confirmed = await confirmAction({
+    description: t('admin.cardSecrets.batch.confirmBatchDelete', {
+      id: batch.id,
+      batchNo: batch.batch_no || '-',
+    }),
+    confirmText: t('admin.common.delete'),
+    variant: 'destructive',
+  })
+  if (!confirmed) return
+
+  batchActionLoading.value = true
+  try {
+    const response = await adminAPI.batchDeleteCardSecrets({
+      batch_id: batch.id,
+    })
+    const affected = Number(response?.data?.data?.affected || batch.total_count || 0)
+    batchActionSuccess.value = t('admin.cardSecrets.success.batchDeleted', { count: affected })
+    if (currentBatchId.value === Number(batch.id || 0)) {
+      clearBatchFilter()
+    }
+    await refreshAll()
+  } catch (error: any) {
+    batchActionError.value = error?.message || t('admin.cardSecrets.errors.batchDeleteFailed')
+  } finally {
+    batchActionLoading.value = false
+  }
+}
+
+const exportSecretsByBatch = async (batch: AdminCardSecretBatch, format: 'txt' | 'csv') => {
+  clearBatchActionMessages()
+  batchActionLoading.value = true
+  try {
+    const response = await adminAPI.exportCardSecrets({
+      batch_id: batch.id,
+      format,
+    })
+    downloadExportFile(response, format)
+    batchActionSuccess.value = t('admin.cardSecrets.success.batchExported', {
+      count: batch.total_count || 0,
       format: format.toUpperCase(),
     })
   } catch (error: any) {
@@ -701,6 +847,17 @@ onMounted(async () => {
         <p v-if="currentProductId">
           {{ t('admin.cardSecrets.skuLabel') }}：{{ currentSkuId ? resolveSkuLabelById(currentSkuId) : t('admin.cardSecrets.skuAll') }}
         </p>
+        <p v-if="currentProductId">
+          {{ currentBatchFilterText }}
+          <button
+            v-if="currentBatchId"
+            type="button"
+            class="ml-2 text-primary underline-offset-4 hover:underline"
+            @click="clearBatchFilterAndRefresh"
+          >
+            {{ t('admin.cardSecrets.batchFilterClear') }}
+          </button>
+        </p>
       </div>
     </div>
 
@@ -736,80 +893,73 @@ onMounted(async () => {
           <Table class="min-w-[920px]">
           <TableHeader class="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground">
             <TableRow>
+              <TableHead class="min-w-[120px] px-4 py-3">{{ t('admin.cardSecrets.table.id') }}</TableHead>
               <TableHead class="min-w-[220px] px-4 py-3">{{ t('admin.cardSecrets.table.batchNo') }}</TableHead>
               <TableHead class="min-w-[140px] px-4 py-3">{{ t('admin.cardSecrets.table.source') }}</TableHead>
               <TableHead class="min-w-[220px] px-4 py-3">{{ t('admin.cardSecrets.table.sku') }}</TableHead>
               <TableHead class="min-w-[120px] px-4 py-3">{{ t('admin.cardSecrets.table.count') }}</TableHead>
               <TableHead class="min-w-[220px] px-4 py-3">{{ t('admin.cardSecrets.table.note') }}</TableHead>
               <TableHead class="min-w-[180px] px-4 py-3">{{ t('admin.cardSecrets.table.createdAt') }}</TableHead>
+              <TableHead class="min-w-[280px] px-4 py-3 text-right">{{ t('admin.cardSecrets.table.action') }}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody class="divide-y divide-border">
             <TableRow v-if="batchesLoading">
-              <TableCell :colspan="6" class="p-0">
-                <TableSkeleton :columns="6" :rows="5" />
+              <TableCell :colspan="8" class="p-0">
+                <TableSkeleton :columns="8" :rows="5" />
               </TableCell>
             </TableRow>
             <TableRow v-else-if="batches.length === 0">
-              <TableCell colspan="6" class="px-4 py-6 text-center text-muted-foreground">{{ t('admin.cardSecrets.emptyBatches') }}</TableCell>
+              <TableCell colspan="8" class="px-4 py-6 text-center text-muted-foreground">{{ t('admin.cardSecrets.emptyBatches') }}</TableCell>
             </TableRow>
             <TableRow v-for="batch in batches" :key="batch.id" class="hover:bg-muted/30">
+              <TableCell class="min-w-[120px] px-4 py-3 text-xs text-muted-foreground">
+                <IdCell :value="batch.id" />
+              </TableCell>
               <TableCell class="min-w-[220px] px-4 py-3 font-medium text-foreground"><div class="break-all">{{ batch.batch_no || '-' }}</div></TableCell>
               <TableCell class="min-w-[140px] px-4 py-3 text-xs text-muted-foreground">{{ batch.source }}</TableCell>
               <TableCell class="min-w-[220px] px-4 py-3 text-xs text-muted-foreground"><div class="break-words">{{ batchSkuLabel(batch) }}</div></TableCell>
               <TableCell class="min-w-[120px] px-4 py-3 text-xs text-muted-foreground">{{ batch.total_count }}</TableCell>
               <TableCell class="min-w-[220px] px-4 py-3 text-xs text-muted-foreground"><div class="break-words">{{ batch.note || '-' }}</div></TableCell>
               <TableCell class="min-w-[180px] px-4 py-3 text-xs text-muted-foreground">{{ formatDate(batch.created_at) }}</TableCell>
+              <TableCell class="min-w-[280px] px-4 py-3 text-right">
+                <div class="flex flex-wrap justify-end gap-2">
+                  <Button size="sm" variant="outline" :disabled="batchActionLoading" @click="filterByBatch(batch)">
+                    {{ t('admin.cardSecrets.batch.viewSecrets') }}
+                  </Button>
+                  <Button size="sm" variant="outline" :disabled="batchActionLoading" @click="applyStatusForBatch(batch)">
+                    {{ t('admin.cardSecrets.batch.applyStatusForBatch') }}
+                  </Button>
+                  <Button size="sm" variant="outline" :disabled="batchActionLoading" @click="exportSecretsByBatch(batch, 'txt')">
+                    {{ t('admin.cardSecrets.batch.exportBatchTxt') }}
+                  </Button>
+                  <Button size="sm" variant="outline" :disabled="batchActionLoading" @click="exportSecretsByBatch(batch, 'csv')">
+                    {{ t('admin.cardSecrets.batch.exportBatchCsv') }}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    class="border-destructive/40 text-destructive hover:bg-destructive/10"
+                    :disabled="batchActionLoading"
+                    @click="deleteSecretsByBatch(batch)"
+                  >
+                    {{ t('admin.cardSecrets.batch.deleteBatch') }}
+                  </Button>
+                </div>
+              </TableCell>
             </TableRow>
           </TableBody>
           </Table>
         </div>
-
-        <div
-          v-if="batchPagination.total_page > 1"
-          class="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-4"
-        >
-          <div class="flex items-center gap-3">
-            <span class="text-xs text-muted-foreground">
-              {{ t('admin.common.pageInfo', { total: batchPagination.total, page: batchPagination.page, totalPage: batchPagination.total_page }) }}
-            </span>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <div class="flex items-center gap-2">
-              <Input
-                v-model="batchJumpPage"
-                type="number"
-                min="1"
-                :max="batchPagination.total_page"
-                class="h-8 w-20"
-                :placeholder="t('admin.common.jumpPlaceholder')"
-              />
-              <Button variant="outline" size="sm" class="h-8" @click="jumpBatchPage">
-                {{ t('admin.common.jumpTo') }}
-              </Button>
-            </div>
-            <div class="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                class="h-8"
-                :disabled="batchPagination.page <= 1"
-                @click="changeBatchPage(batchPagination.page - 1)"
-              >
-                {{ t('admin.common.prevPage') }}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                class="h-8"
-                :disabled="batchPagination.page >= batchPagination.total_page"
-                @click="changeBatchPage(batchPagination.page + 1)"
-              >
-                {{ t('admin.common.nextPage') }}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <ListPagination
+          :page="batchPagination.page"
+          :total-page="batchPagination.total_page"
+          :total="batchPagination.total"
+          :page-size="batchPagination.page_size"
+          :page-size-options="pageSizeOptions"
+          @change-page="changeBatchPage"
+          @change-page-size="changeBatchPageSize"
+        />
       </div>
     </div>
 
@@ -831,6 +981,17 @@ onMounted(async () => {
             </Select>
             <Button size="sm" variant="outline" @click="refreshCardSecrets">{{ t('admin.common.refresh') }}</Button>
           </div>
+        </div>
+
+        <div v-if="currentBatchId" class="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+          <span>{{ currentBatchFilterText }}</span>
+          <button
+            type="button"
+            class="ml-2 text-primary underline-offset-4 hover:underline"
+            @click="clearBatchFilterAndRefresh"
+          >
+            {{ t('admin.cardSecrets.batchFilterClear') }}
+          </button>
         </div>
 
         <div v-if="hasSelectedSecrets" class="rounded-lg border border-border bg-muted/20 p-3 space-y-3">
@@ -891,7 +1052,7 @@ onMounted(async () => {
             <TableHead class="min-w-[180px] px-4 py-3">{{ t('admin.cardSecrets.listTable.sku') }}</TableHead>
             <TableHead class="min-w-[120px] px-4 py-3">{{ t('admin.cardSecrets.listTable.status') }}</TableHead>
             <TableHead class="min-w-[160px] px-4 py-3">{{ t('admin.cardSecrets.listTable.orderId') }}</TableHead>
-            <TableHead class="min-w-[140px] px-4 py-3">{{ t('admin.cardSecrets.listTable.batchId') }}</TableHead>
+            <TableHead class="min-w-[220px] px-4 py-3">{{ t('admin.cardSecrets.listTable.batchId') }}</TableHead>
             <TableHead class="min-w-[180px] px-4 py-3">{{ t('admin.cardSecrets.listTable.createdAt') }}</TableHead>
             <TableHead class="min-w-[140px] px-4 py-3 text-right">{{ t('admin.cardSecrets.listTable.action') }}</TableHead>
           </TableRow>
@@ -948,8 +1109,15 @@ onMounted(async () => {
                 </span>
               </div>
             </TableCell>
-            <TableCell class="min-w-[140px] px-4 py-3 text-xs text-muted-foreground">
-              <span v-if="secret.batch_id">#{{ secret.batch_id }}</span>
+            <TableCell class="min-w-[220px] px-4 py-3 text-xs text-muted-foreground">
+              <button
+                v-if="secret.batch_id"
+                type="button"
+                class="text-left text-primary underline-offset-4 hover:underline"
+                @click="secret.batch ? filterByBatch(secret.batch) : filterByBatchId(Number(secret.batch_id || 0))"
+              >
+                {{ resolveSecretBatchLabel(secret) }}
+              </button>
               <span v-else>-</span>
             </TableCell>
             <TableCell class="min-w-[180px] px-4 py-3 text-xs text-muted-foreground">{{ formatDate(secret.created_at) }}</TableCell>
@@ -961,51 +1129,15 @@ onMounted(async () => {
         </Table>
       </div>
 
-      <div
-        v-if="cardSecretPagination.total_page > 1"
-        class="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-4"
-      >
-        <div class="flex items-center gap-3">
-          <span class="text-xs text-muted-foreground">
-            {{ t('admin.common.pageInfo', { total: cardSecretPagination.total, page: cardSecretPagination.page, totalPage: cardSecretPagination.total_page }) }}
-          </span>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="flex items-center gap-2">
-            <Input
-              v-model="cardSecretJumpPage"
-              type="number"
-              min="1"
-              :max="cardSecretPagination.total_page"
-              class="h-8 w-20"
-              :placeholder="t('admin.common.jumpPlaceholder')"
-            />
-            <Button variant="outline" size="sm" class="h-8" @click="jumpCardSecretPage">
-              {{ t('admin.common.jumpTo') }}
-            </Button>
-          </div>
-          <div class="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              class="h-8"
-              :disabled="cardSecretPagination.page <= 1"
-              @click="changeSecretPage(cardSecretPagination.page - 1)"
-            >
-              {{ t('admin.common.prevPage') }}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              class="h-8"
-              :disabled="cardSecretPagination.page >= cardSecretPagination.total_page"
-              @click="changeSecretPage(cardSecretPagination.page + 1)"
-            >
-              {{ t('admin.common.nextPage') }}
-            </Button>
-          </div>
-        </div>
-      </div>
+      <ListPagination
+        :page="cardSecretPagination.page"
+        :total-page="cardSecretPagination.total_page"
+        :total="cardSecretPagination.total"
+        :page-size="cardSecretPagination.page_size"
+        :page-size-options="pageSizeOptions"
+        @change-page="changeSecretPage"
+        @change-page-size="changeCardSecretPageSize"
+      />
     </div>
 
     <CardSecretEditModal

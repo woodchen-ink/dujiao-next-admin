@@ -180,16 +180,19 @@ export interface AdminRefundToWalletPayload {
 }
 
 export interface AdminBatchCardSecretStatusPayload {
-  ids: number[]
+  ids?: number[]
+  batch_id?: number
   status: 'available' | 'reserved' | 'used'
 }
 
 export interface AdminBatchCardSecretDeletePayload {
-  ids: number[]
+  ids?: number[]
+  batch_id?: number
 }
 
 export interface AdminExportCardSecretsPayload {
-  ids: number[]
+  ids?: number[]
+  batch_id?: number
   format: 'txt' | 'csv'
 }
 
