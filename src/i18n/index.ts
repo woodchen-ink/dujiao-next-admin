@@ -610,7 +610,7 @@ const messages = {
           paymentsSuccess: '支付成功',
           ordersPaid: '订单已支付',
           ordersCompleted: '订单已完成',
-          paymentConversionRate: '支付转化率',
+          paymentConversionRate: '订单支付转化率',
           completionRate: '完结率',
         },
         rankings: {
@@ -3326,7 +3326,7 @@ const messages = {
           paymentsSuccess: '支付成功',
           ordersPaid: '訂單已支付',
           ordersCompleted: '訂單已完成',
-          paymentConversionRate: '支付轉化率',
+          paymentConversionRate: '訂單支付轉化率',
           completionRate: '完結率',
         },
         rankings: {
@@ -6042,7 +6042,7 @@ const messages = {
           paymentsSuccess: 'Payments Success',
           ordersPaid: 'Orders Paid',
           ordersCompleted: 'Orders Completed',
-          paymentConversionRate: 'Payment Conversion Rate',
+          paymentConversionRate: 'Order Payment Conversion Rate',
           completionRate: 'Completion Rate',
         },
         rankings: {
