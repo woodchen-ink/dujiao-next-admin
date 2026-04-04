@@ -495,6 +495,14 @@ onBeforeUnmount(() => {
   border-radius: 0.5rem;
 }
 
+:deep(.ProseMirror p:has(+ .tiptap-image-wrapper)) {
+  margin-bottom: 1rem;
+}
+
+:deep(.ProseMirror .tiptap-image-wrapper + p:not(:empty)) {
+  margin-top: 1rem;
+}
+
 :deep(.ProseMirror a) {
   color: hsl(var(--primary));
   text-decoration: underline;
