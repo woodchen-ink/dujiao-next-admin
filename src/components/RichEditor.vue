@@ -93,7 +93,7 @@ const editor = useEditor({
       },
     }).configure({
       HTMLAttributes: {
-        class: 'max-w-full h-auto rounded-lg my-4',
+        class: 'max-w-full h-auto rounded-lg',
       },
       inline: true,
       allowBase64: false,
@@ -493,8 +493,6 @@ onBeforeUnmount(() => {
   max-width: 100%;
   height: auto;
   border-radius: 0.5rem;
-  margin-top: 1rem;
-  margin-bottom: 1rem;
 }
 
 :deep(.ProseMirror a) {
