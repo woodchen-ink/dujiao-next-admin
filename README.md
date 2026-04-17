@@ -1,6 +1,6 @@
-# Dujiao-Next Admin
+# CZL Store Admin
 
-Dujiao-Next Admin is the management console for operating products, orders, users, payment channels, and system settings.
+CZL Store Admin is the management console for operating products, orders, users, payment channels, and system settings.
 
 ## Tech Stack
 
