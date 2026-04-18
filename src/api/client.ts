@@ -67,7 +67,7 @@ function getHttpErrorMessage(status: number): string {
 }
 
 const baseURL = `${API_BASE_URL}${API_PREFIX}`
-const timeout = 10000
+const timeout = 20000
 
 async function request(method: string, path: string, bodyOrOptions?: any, options?: RequestOptions): Promise<{ data: any }> {
   let body: any = undefined
