@@ -426,7 +426,7 @@ const aiFormatTitle = () =>
   })
 
 const aiGenerateSlug = () =>
-  aiGenerate('product_slug', { category_name: getCurrentCategoryName(), title: form.title['zh-CN'] }, (r) => {
+  aiGenerate('product_slug', { category_name: getCurrentCategoryName(), title: form.title['zh-CN'], exclude_id: props.productId ?? undefined }, (r) => {
     form.slug = String(r)
   })
 
