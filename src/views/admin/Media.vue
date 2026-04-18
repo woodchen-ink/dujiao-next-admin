@@ -165,6 +165,31 @@ function handleRenameKeydown(e: KeyboardEvent, item: AdminMedia) {
   }
 }
 
+// Migrate to image hosting
+const migratingId = ref<number | null>(null)
+
+function isLocalPath(path: string) {
+  return path.startsWith('/uploads/')
+}
+
+async function handleMigrate(item: AdminMedia) {
+  if (!isLocalPath(item.path)) {
+    notifySuccess(t('admin.media.card.migrateAlready'))
+    return
+  }
+  migratingId.value = item.id
+  try {
+    const res = await adminAPI.migrateMediaToImageHosting(item.id)
+    const newURL = (res.data.data as any)?.url
+    if (newURL) item.path = newURL
+    notifySuccess(t('admin.media.card.migrateSuccess'))
+  } catch (err: any) {
+    notifyError(t('admin.media.errors.migrateFailed', { message: err?.message || '' }))
+  } finally {
+    migratingId.value = null
+  }
+}
+
 // Delete
 async function handleDelete(item: AdminMedia) {
   const confirmed = await confirmAction({
@@ -234,9 +259,23 @@ onMounted(() => fetchMedia(1))
             class="h-full w-full object-contain"
             loading="lazy"
           />
-          <!-- Hover overlay with delete -->
-          <div class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-            <Button size="sm" variant="destructive" @click="handleDelete(item)">
+          <!-- 图床标记 -->
+          <span
+            v-if="!isLocalPath(item.path)"
+            class="absolute left-1 top-1 rounded bg-blue-500/80 px-1 py-0.5 text-[9px] font-medium text-white"
+          >CDN</span>
+          <!-- Hover overlay with actions -->
+          <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+            <Button
+              v-if="isLocalPath(item.path)"
+              size="sm"
+              variant="secondary"
+              :disabled="migratingId === item.id"
+              @click.stop="handleMigrate(item)"
+            >
+              {{ migratingId === item.id ? '...' : t('admin.media.card.migrateToImageHosting') }}
+            </Button>
+            <Button size="sm" variant="destructive" @click.stop="handleDelete(item)">
               {{ t('admin.common.delete') }}
             </Button>
           </div>

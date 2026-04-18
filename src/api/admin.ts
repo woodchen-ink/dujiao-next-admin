@@ -254,6 +254,7 @@ export const adminAPI = {
   getMedia: (params?: Record<string, unknown>) => api.get('/admin/media', { params }),
   updateMedia: (id: number, data: { name: string }) => api.put(`/admin/media/${id}`, data),
   deleteMedia: (id: number) => api.delete(`/admin/media/${id}`),
+  migrateMediaToImageHosting: (id: number) => api.post(`/admin/media/${id}/migrate-to-image-hosting`, {}),
 
   getProducts: (params?: Record<string, unknown>) => api.get('/admin/products', { params }),
   getProduct: (id: number) => api.get(`/admin/products/${id}`),

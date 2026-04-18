@@ -307,6 +307,7 @@ export interface AdminMedia {
   name: string
   filename: string
   path: string
+  external_key: string
   mime_type: string
   size: number
   scene: string
