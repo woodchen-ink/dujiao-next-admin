@@ -476,31 +476,31 @@ const aiTranslateWith = async (loadingKey: string, field: string, zhCN: string, 
 }
 
 const aiTranslateTitle = () =>
-  aiTranslateWith('product_translate_title', 'title', form.title['zh-CN'], (r) => {
+  aiTranslateWith('product_translate_title', 'title', form.title['zh-CN'] || '', (r) => {
     if (r['zh_tw']) form.title['zh-TW'] = r['zh_tw']
     if (r['en_us']) form.title['en-US'] = r['en_us']
   })
 
 const aiTranslateDescription = () =>
-  aiTranslateWith('product_translate_description', 'description', form.description['zh-CN'], (r) => {
+  aiTranslateWith('product_translate_description', 'description', form.description['zh-CN'] || '', (r) => {
     if (r['zh_tw']) form.description['zh-TW'] = r['zh_tw']
     if (r['en_us']) form.description['en-US'] = r['en_us']
   })
 
 const aiTranslateContent = () =>
-  aiTranslateWith('product_translate_content', 'content', form.content['zh-CN'], (r) => {
+  aiTranslateWith('product_translate_content', 'content', form.content['zh-CN'] || '', (r) => {
     if (r['zh_tw']) form.content['zh-TW'] = r['zh_tw']
     if (r['en_us']) form.content['en-US'] = r['en_us']
   })
 
 const aiTranslateKeywords = () =>
-  aiTranslateWith('product_translate_keywords', 'keywords', form.seo_meta.keywords['zh-CN'], (r) => {
+  aiTranslateWith('product_translate_keywords', 'keywords', form.seo_meta.keywords['zh-CN'] || '', (r) => {
     if (r['zh_tw']) form.seo_meta.keywords['zh-TW'] = r['zh_tw']
     if (r['en_us']) form.seo_meta.keywords['en-US'] = r['en_us']
   })
 
 const aiTranslateSeoDescription = () =>
-  aiTranslateWith('product_translate_seo_description', 'seo_description', form.seo_meta.description['zh-CN'], (r) => {
+  aiTranslateWith('product_translate_seo_description', 'seo_description', form.seo_meta.description['zh-CN'] || '', (r) => {
     if (r['zh_tw']) form.seo_meta.description['zh-TW'] = r['zh_tw']
     if (r['en_us']) form.seo_meta.description['en-US'] = r['en_us']
   })
