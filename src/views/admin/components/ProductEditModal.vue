@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { AdminProduct, AdminCategory, AdminProductSKU, AdminPaymentChannel, LocalizedText } from '@/api/types'
 import MediaPicker from '@/components/admin/MediaPicker.vue'
+import AIInputWrapper from '@/components/admin/AIInputWrapper.vue'
 import RichEditor from '@/components/RichEditor.vue'
 // image utils removed - MediaPicker handles image display
 import { Button } from '@/components/ui/button'
@@ -11,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogScrollContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { notifyError } from '@/utils/notify'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import { getLocalizedText } from '@/utils/format'
 import { buildAdminCategoryPath, createAdminCategoryChildCountMap, createAdminCategoryMap, flattenAdminCategories, isAdminProductCategorySelectable } from '@/utils/category'
 
@@ -394,6 +395,118 @@ const normalizeManualFormSchemaForSubmit = () => {
   return { fields }
 }
 
+// ==================== AI 辅助生成 ====================
+
+const aiLoading = reactive<Record<string, boolean>>({})
+
+const aiGenerate = async (action: string, data: Record<string, unknown>, onResult: (r: unknown) => void) => {
+  aiLoading[action] = true
+  try {
+    const res = await adminAPI.aiGenerate(action, data)
+    const result = res.data?.data?.result
+    if (result !== undefined && result !== null && result !== '') {
+      onResult(result)
+    }
+  } catch (err: any) {
+    notifyError(err?.message || 'AI 生成失败')
+  } finally {
+    aiLoading[action] = false
+  }
+}
+
+// 获取当前分类名称（zh-CN）
+const getCurrentCategoryName = () => {
+  const cat = props.categories.find((c) => c.id === form.category_id)
+  return cat ? (cat.name?.['zh-CN'] || '') : ''
+}
+
+const aiFormatTitle = () =>
+  aiGenerate('product_title_format', { category_name: getCurrentCategoryName(), current_title: form.title['zh-CN'] }, (r) => {
+    form.title['zh-CN'] = String(r)
+  })
+
+const aiGenerateSlug = () =>
+  aiGenerate('product_slug', { category_name: getCurrentCategoryName(), title: form.title['zh-CN'] }, (r) => {
+    form.slug = String(r)
+  })
+
+const aiGenerateKeywords = () =>
+  aiGenerate('product_keywords', { category_name: getCurrentCategoryName(), title: form.title['zh-CN'] }, (r) => {
+    form.seo_meta.keywords['zh-CN'] = String(r)
+  })
+
+const aiGenerateSeoDescription = () =>
+  aiGenerate('product_seo_description', {
+    category_name: getCurrentCategoryName(),
+    title: form.title['zh-CN'],
+    description: form.description['zh-CN'],
+  }, (r) => {
+    form.seo_meta.description['zh-CN'] = String(r)
+  })
+
+const aiGenerateDescription = () =>
+  aiGenerate('product_description', {
+    category_name: getCurrentCategoryName(),
+    title: form.title['zh-CN'],
+    content: form.content['zh-CN'],
+  }, (r) => {
+    form.description['zh-CN'] = String(r)
+  })
+
+const aiPolishContent = () =>
+  aiGenerate('product_content_polish', { content: form.content['zh-CN'] }, (r) => {
+    form.content['zh-CN'] = String(r)
+  })
+
+// 带独立 loading key 的翻译，避免多个翻译按钮互相影响 loading 状态
+const aiTranslateWith = async (loadingKey: string, field: string, zhCN: string, onResult: (r: Record<string, string>) => void) => {
+  aiLoading[loadingKey] = true
+  try {
+    const res = await adminAPI.aiGenerate('product_translate', { field, zh_cn: zhCN })
+    const result = res.data?.data?.result as Record<string, string>
+    if (result) {
+      onResult(result)
+      notifySuccess('已填充繁体和英文')
+    }
+  } catch (err: any) {
+    notifyError(err?.message || 'AI 翻译失败')
+  } finally {
+    aiLoading[loadingKey] = false
+  }
+}
+
+const aiTranslateTitle = () =>
+  aiTranslateWith('product_translate_title', 'title', form.title['zh-CN'], (r) => {
+    if (r['zh_tw']) form.title['zh-TW'] = r['zh_tw']
+    if (r['en_us']) form.title['en-US'] = r['en_us']
+  })
+
+const aiTranslateDescription = () =>
+  aiTranslateWith('product_translate_description', 'description', form.description['zh-CN'], (r) => {
+    if (r['zh_tw']) form.description['zh-TW'] = r['zh_tw']
+    if (r['en_us']) form.description['en-US'] = r['en_us']
+  })
+
+const aiTranslateContent = () =>
+  aiTranslateWith('product_translate_content', 'content', form.content['zh-CN'], (r) => {
+    if (r['zh_tw']) form.content['zh-TW'] = r['zh_tw']
+    if (r['en_us']) form.content['en-US'] = r['en_us']
+  })
+
+const aiTranslateKeywords = () =>
+  aiTranslateWith('product_translate_keywords', 'keywords', form.seo_meta.keywords['zh-CN'], (r) => {
+    if (r['zh_tw']) form.seo_meta.keywords['zh-TW'] = r['zh_tw']
+    if (r['en_us']) form.seo_meta.keywords['en-US'] = r['en_us']
+  })
+
+const aiTranslateSeoDescription = () =>
+  aiTranslateWith('product_translate_seo_description', 'seo_description', form.seo_meta.description['zh-CN'], (r) => {
+    if (r['zh_tw']) form.seo_meta.description['zh-TW'] = r['zh_tw']
+    if (r['en_us']) form.seo_meta.description['en-US'] = r['en_us']
+  })
+
+// ==================== END AI ====================
+
 const addManualFormField = () => {
   form.manual_form_schema.fields.push(createManualFormField())
 }
@@ -708,24 +821,69 @@ watch(
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div class="col-span-1 md:col-span-2">
             <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.products.form.title', { lang: getCurrentLangName() }) }}</label>
-            <Input v-model="form.title[currentLang]" required :placeholder="t('admin.products.form.titlePlaceholder')" />
+            <AIInputWrapper
+              v-if="currentLang === 'zh-CN'"
+              :loading="aiLoading['product_title_format'] || aiLoading['product_translate_title']"
+              @generate="aiFormatTitle"
+            >
+              <Input v-model="form.title[currentLang]" required class="pr-8" :placeholder="t('admin.products.form.titlePlaceholder')" />
+            </AIInputWrapper>
+            <AIInputWrapper
+              v-else
+              :loading="aiLoading['product_translate_title']"
+              @generate="aiTranslateTitle"
+            >
+              <Input v-model="form.title[currentLang]" required class="pr-8" :placeholder="t('admin.products.form.titlePlaceholder')" />
+            </AIInputWrapper>
+            <p v-if="currentLang === 'zh-CN'" class="mt-1 text-xs text-muted-foreground">点击 ✦ 可规整为「[分类] 名称」格式</p>
+            <p v-else class="mt-1 text-xs text-muted-foreground">点击 ✦ 可根据简体中文自动翻译填充所有语言</p>
           </div>
 
           <div class="col-span-1">
             <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.products.form.slug') }}</label>
-            <Input v-model="form.slug" required :placeholder="t('admin.products.form.slugPlaceholder')" />
+            <AIInputWrapper :loading="aiLoading['product_slug']" @generate="aiGenerateSlug">
+              <Input v-model="form.slug" required class="pr-8" :placeholder="t('admin.products.form.slugPlaceholder')" />
+            </AIInputWrapper>
             <p class="mt-1 text-xs text-muted-foreground">{{ t('admin.products.form.slugTip') }}</p>
           </div>
 
           <div class="col-span-1">
             <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.products.form.seoMetaKeywords', { lang: getCurrentLangName() }) }}</label>
-            <Input v-model="form.seo_meta.keywords[currentLang]" :placeholder="t('admin.products.form.seoMetaKeywordsPlaceholder')" />
+            <AIInputWrapper
+              v-if="currentLang === 'zh-CN'"
+              :loading="aiLoading['product_keywords']"
+              @generate="aiGenerateKeywords"
+            >
+              <Input v-model="form.seo_meta.keywords[currentLang]" class="pr-8" :placeholder="t('admin.products.form.seoMetaKeywordsPlaceholder')" />
+            </AIInputWrapper>
+            <AIInputWrapper
+              v-else
+              :loading="aiLoading['product_translate_keywords']"
+              @generate="aiTranslateKeywords"
+            >
+              <Input v-model="form.seo_meta.keywords[currentLang]" class="pr-8" :placeholder="t('admin.products.form.seoMetaKeywordsPlaceholder')" />
+            </AIInputWrapper>
             <p class="mt-1 text-xs text-muted-foreground">{{ t('admin.products.form.seoMetaKeywordsTip') }}</p>
           </div>
 
           <div class="col-span-1 md:col-span-2">
             <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.products.form.seoMetaDescription', { lang: getCurrentLangName() }) }}</label>
-            <Textarea v-model="form.seo_meta.description[currentLang]" :placeholder="t('admin.products.form.seoMetaDescriptionPlaceholder')" class="min-h-[80px]" />
+            <AIInputWrapper
+              v-if="currentLang === 'zh-CN'"
+              multiline
+              :loading="aiLoading['product_seo_description']"
+              @generate="aiGenerateSeoDescription"
+            >
+              <Textarea v-model="form.seo_meta.description[currentLang]" :placeholder="t('admin.products.form.seoMetaDescriptionPlaceholder')" class="min-h-[80px] pr-8" />
+            </AIInputWrapper>
+            <AIInputWrapper
+              v-else
+              multiline
+              :loading="aiLoading['product_translate_seo_description']"
+              @generate="aiTranslateSeoDescription"
+            >
+              <Textarea v-model="form.seo_meta.description[currentLang]" :placeholder="t('admin.products.form.seoMetaDescriptionPlaceholder')" class="min-h-[80px] pr-8" />
+            </AIInputWrapper>
             <p class="mt-1 text-xs text-muted-foreground">{{ t('admin.products.form.seoMetaDescriptionTip') }}</p>
           </div>
 
@@ -1000,11 +1158,52 @@ watch(
 
           <div class="col-span-1 md:col-span-2">
             <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.products.form.description', { lang: getCurrentLangName() }) }}</label>
-            <Textarea v-model="form.description[currentLang]" rows="3" :placeholder="t('admin.products.form.descriptionPlaceholder')" />
+            <AIInputWrapper
+              v-if="currentLang === 'zh-CN'"
+              multiline
+              :loading="aiLoading['product_description']"
+              @generate="aiGenerateDescription"
+            >
+              <Textarea v-model="form.description[currentLang]" rows="3" class="pr-8" :placeholder="t('admin.products.form.descriptionPlaceholder')" />
+            </AIInputWrapper>
+            <AIInputWrapper
+              v-else
+              multiline
+              :loading="aiLoading['product_translate_description']"
+              @generate="aiTranslateDescription"
+            >
+              <Textarea v-model="form.description[currentLang]" rows="3" class="pr-8" :placeholder="t('admin.products.form.descriptionPlaceholder')" />
+            </AIInputWrapper>
           </div>
 
           <div class="col-span-1 md:col-span-2">
-            <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.products.form.content', { lang: getCurrentLangName() }) }}</label>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs font-medium text-muted-foreground">{{ t('admin.products.form.content', { lang: getCurrentLangName() }) }}</label>
+              <div class="flex gap-1.5">
+                <button
+                  v-if="currentLang === 'zh-CN'"
+                  type="button"
+                  :disabled="aiLoading['product_content_polish']"
+                  class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs text-muted-foreground border border-border hover:text-primary hover:border-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  @click="aiPolishContent"
+                >
+                  <svg v-if="aiLoading['product_content_polish']" class="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
+                  <svg v-else class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" opacity="0.9"/></svg>
+                  AI 优化
+                </button>
+                <button
+                  v-if="currentLang !== 'zh-CN'"
+                  type="button"
+                  :disabled="aiLoading['product_translate_content']"
+                  class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs text-muted-foreground border border-border hover:text-primary hover:border-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  @click="aiTranslateContent"
+                >
+                  <svg v-if="aiLoading['product_translate_content']" class="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
+                  <svg v-else class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" opacity="0.9"/></svg>
+                  AI 翻译
+                </button>
+              </div>
+            </div>
             <RichEditor :model-value="form.content[currentLang] || ''" @update:model-value="(v: string) => form.content[currentLang] = v" :placeholder="t('admin.products.form.contentPlaceholder')" />
             <p class="mt-1 text-xs text-muted-foreground">{{ t('admin.products.form.contentTip') }}</p>
           </div>

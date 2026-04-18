@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { AdminCategory, LocalizedText } from '@/api/types'
 import IdCell from '@/components/IdCell.vue'
+import AIInputWrapper from '@/components/admin/AIInputWrapper.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogScrollContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -14,7 +15,7 @@ import TableSkeleton from '@/components/TableSkeleton.vue'
 import MediaPicker from '@/components/admin/MediaPicker.vue'
 import { getLocalizedText } from '@/utils/format'
 import { getImageUrl } from '@/utils/image'
-import { notifyError } from '@/utils/notify'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import { confirmAction } from '@/utils/confirm'
 import { buildAdminCategoryPath, createAdminCategoryMap, flattenAdminCategories } from '@/utils/category'
 import { useFormValidation, rules } from '@/composables/useFormValidation'
@@ -80,6 +81,38 @@ const { errors, validate, clearErrors } = useFormValidation({
   slug: [rules.required('This field is required')],
   name: [rules.required('This field is required')],
 })
+
+const aiLoading = reactive<Record<string, boolean>>({})
+
+const aiGenerate = async (action: string, data: Record<string, unknown>, onResult: (r: unknown) => void) => {
+  aiLoading[action] = true
+  try {
+    const res = await adminAPI.aiGenerate(action, data)
+    const result = res.data?.data?.result
+    if (result !== undefined && result !== null && result !== '') {
+      onResult(result)
+    }
+  } catch (err: any) {
+    notifyError(err?.message || 'AI 生成失败')
+  } finally {
+    aiLoading[action] = false
+  }
+}
+
+const getCategoryZhName = () => form.name['zh-CN'] || ''
+
+const aiGenerateCategorySlug = () =>
+  aiGenerate('category_slug', { name: getCategoryZhName() || form.name['en-US'] || form.slug }, (r) => {
+    form.slug = String(r)
+  })
+
+const aiTranslateCategory = () =>
+  aiGenerate('category_translate', { zh_cn: getCategoryZhName() }, (r) => {
+    const result = r as Record<string, string>
+    if (result['zh_tw']) form.name['zh-TW'] = result['zh_tw']
+    if (result['en_us']) form.name['en-US'] = result['en_us']
+    notifySuccess('已填充繁体和英文名称')
+  })
 
 const getCurrentLangName = () => {
   return languages.value.find((item) => item.code === currentLang.value)?.name || t('admin.common.lang.zhCN')
@@ -282,13 +315,19 @@ watch(
 
           <div>
             <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.categories.form.name', { lang: getCurrentLangName() }) }}</label>
-            <Input v-model="form.name[currentLang]" :placeholder="t('admin.categories.form.namePlaceholder')" />
+            <AIInputWrapper v-if="currentLang === 'zh-CN'" :loading="aiLoading['category_translate']" @generate="aiTranslateCategory">
+              <Input v-model="form.name[currentLang]" class="pr-8" :placeholder="t('admin.categories.form.namePlaceholder')" />
+            </AIInputWrapper>
+            <Input v-else v-model="form.name[currentLang]" :placeholder="t('admin.categories.form.namePlaceholder')" />
             <p v-if="errors.name" class="text-xs text-destructive mt-1">{{ errors.name }}</p>
+            <p v-if="currentLang === 'zh-CN'" class="text-xs text-muted-foreground mt-1">点击 ✦ 可根据简体中文自动填充繁体和英文</p>
           </div>
 
           <div>
             <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.categories.form.slug') }}</label>
-            <Input v-model="form.slug" :placeholder="t('admin.categories.form.slugPlaceholder')" />
+            <AIInputWrapper :loading="aiLoading['category_slug']" @generate="aiGenerateCategorySlug">
+              <Input v-model="form.slug" class="pr-8" :placeholder="t('admin.categories.form.slugPlaceholder')" />
+            </AIInputWrapper>
             <p v-if="errors.slug" class="text-xs text-destructive mt-1">{{ errors.slug }}</p>
           </div>
 

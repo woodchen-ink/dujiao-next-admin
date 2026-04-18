@@ -465,4 +465,8 @@ export const adminAPI = {
     api.get(`/admin/ads/render/${slotCode}`, { params }),
   reportAdImpression: (data: { tenant: string; client: string; slot_code: string; items: { ad_id: number; impression_token: string }[] }) =>
     api.post('/admin/ads/impression', data),
+
+  // AI 辅助生成
+  aiGenerate: (action: string, data?: Record<string, unknown>) =>
+    api.post('/admin/ai/generate', { action, data: data ?? {} }),
 }
