@@ -7,6 +7,7 @@ import type { AdminMedia } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogScrollContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { getImageUrl } from '@/utils/image'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import { confirmAction } from '@/utils/confirm'
@@ -168,6 +169,20 @@ function handleRenameKeydown(e: KeyboardEvent, item: AdminMedia) {
 // Migrate to image hosting
 const migratingId = ref<number | null>(null)
 
+interface MigrateReplaceRow {
+  table: string
+  column: string
+  affected: number
+  error?: string
+}
+const migrateResultOpen = ref(false)
+const migrateResultData = ref<{
+  oldPath: string
+  newUrl: string
+  replaced: MigrateReplaceRow[]
+  hasError: boolean
+} | null>(null)
+
 function isLocalPath(path: string) {
   return path.startsWith('/uploads/')
 }
@@ -180,9 +195,26 @@ async function handleMigrate(item: AdminMedia) {
   migratingId.value = item.id
   try {
     const res = await adminAPI.migrateMediaToImageHosting(item.id)
-    const newURL = (res.data.data as any)?.url
+    const data = (res.data.data as any) || {}
+    const newURL: string = data.url || ''
+    const oldPath: string = data.old_path || item.path
+    const replaced: MigrateReplaceRow[] = Array.isArray(data.replaced) ? data.replaced : []
     if (newURL) item.path = newURL
-    notifySuccess(t('admin.media.card.migrateSuccess'))
+
+    const hasError = replaced.some((r) => !!r.error)
+    migrateResultData.value = {
+      oldPath,
+      newUrl: newURL,
+      replaced,
+      hasError,
+    }
+    migrateResultOpen.value = true
+
+    if (hasError) {
+      notifyError(t('admin.media.migrateResult.warning'))
+    } else {
+      notifySuccess(t('admin.media.card.migrateSuccess'))
+    }
   } catch (err: any) {
     notifyError(t('admin.media.errors.migrateFailed', { message: err?.message || '' }))
   } finally {
@@ -307,6 +339,68 @@ onMounted(() => fetchMedia(1))
         </div>
       </div>
     </div>
+
+    <!-- Migration result dialog -->
+    <Dialog v-model:open="migrateResultOpen">
+      <DialogScrollContent class="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{{ t('admin.media.migrateResult.title') }}</DialogTitle>
+        </DialogHeader>
+        <div v-if="migrateResultData" class="space-y-3 text-sm">
+          <div
+            v-if="migrateResultData.hasError"
+            class="rounded border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive"
+          >
+            {{ t('admin.media.migrateResult.warning') }}
+          </div>
+          <div class="space-y-1">
+            <div class="text-xs text-muted-foreground">{{ t('admin.media.migrateResult.oldPath') }}</div>
+            <div class="break-all rounded bg-muted px-2 py-1 text-xs">{{ migrateResultData.oldPath }}</div>
+          </div>
+          <div class="space-y-1">
+            <div class="text-xs text-muted-foreground">{{ t('admin.media.migrateResult.newUrl') }}</div>
+            <div class="break-all rounded bg-muted px-2 py-1 text-xs">{{ migrateResultData.newUrl }}</div>
+          </div>
+          <div v-if="migrateResultData.replaced.length === 0" class="py-2 text-xs text-muted-foreground">
+            {{ t('admin.media.migrateResult.noReferences') }}
+          </div>
+          <div v-else class="overflow-hidden rounded border border-border">
+            <table class="w-full text-xs">
+              <thead class="bg-muted">
+                <tr>
+                  <th class="px-2 py-1.5 text-left font-medium">{{ t('admin.media.migrateResult.tableHeader') }}</th>
+                  <th class="px-2 py-1.5 text-right font-medium">{{ t('admin.media.migrateResult.affectedHeader') }}</th>
+                  <th class="px-2 py-1.5 text-left font-medium">{{ t('admin.media.migrateResult.statusHeader') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(row, idx) in migrateResultData.replaced"
+                  :key="idx"
+                  class="border-t border-border"
+                >
+                  <td class="px-2 py-1.5 font-mono">{{ row.table }}.{{ row.column }}</td>
+                  <td class="px-2 py-1.5 text-right">{{ row.affected }}</td>
+                  <td class="px-2 py-1.5">
+                    <span v-if="row.error" class="text-destructive" :title="row.error">
+                      {{ t('admin.media.migrateResult.statusFailed') }}
+                    </span>
+                    <span v-else class="text-emerald-600">
+                      {{ t('admin.media.migrateResult.statusOk') }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="flex justify-end pt-2">
+            <Button variant="outline" size="sm" @click="migrateResultOpen = false">
+              {{ t('admin.media.migrateResult.close') }}
+            </Button>
+          </div>
+        </div>
+      </DialogScrollContent>
+    </Dialog>
 
     <!-- Pagination -->
     <div v-if="pagination.total_page > 1" class="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
