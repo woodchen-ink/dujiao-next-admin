@@ -835,7 +835,7 @@ watch(
             >
               <Input v-model="form.title[currentLang]" required class="pr-8" :placeholder="t('admin.products.form.titlePlaceholder')" />
             </AIInputWrapper>
-            <p v-if="currentLang === 'zh-CN'" class="mt-1 text-xs text-muted-foreground">点击 ✦ 可规整为「[分类] 名称」格式</p>
+            <p v-if="currentLang === 'zh-CN'" class="mt-1 text-xs text-muted-foreground">点击 ✦ 可规整商品名称（保留核心信息，去掉冗余前缀）</p>
             <p v-else class="mt-1 text-xs text-muted-foreground">点击 ✦ 可根据简体中文自动翻译填充所有语言</p>
           </div>
 
