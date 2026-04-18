@@ -505,6 +505,27 @@ const aiTranslateSeoDescription = () =>
     if (r['en_us']) form.seo_meta.description['en-US'] = r['en_us']
   })
 
+const aiPolishInstructions = () =>
+  aiGenerate('product_instructions_polish', { content: form.instructions['zh-CN'] }, (r) => {
+    form.instructions['zh-CN'] = String(r)
+  })
+
+const aiTranslateInstructions = () =>
+  aiTranslateWith('product_translate_instructions', 'content', form.instructions['zh-CN'] || '', (r) => {
+    if (r['zh_tw']) form.instructions['zh-TW'] = r['zh_tw']
+    if (r['en_us']) form.instructions['en-US'] = r['en_us']
+  })
+
+const aiGenerateTags = () =>
+  aiGenerate('product_tags', { category_name: getCurrentCategoryName(), title: form.title['zh-CN'] }, (r) => {
+    const tags = r as string[]
+    tags.forEach((tag) => {
+      if (tag && !form.tags.includes(tag)) {
+        form.tags.push(tag)
+      }
+    })
+  })
+
 // ==================== END AI ====================
 
 const addManualFormField = () => {
@@ -1209,13 +1230,51 @@ watch(
           </div>
 
           <div class="col-span-1 md:col-span-2">
-            <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.products.form.instructions', { lang: getCurrentLangName() }) }}</label>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs font-medium text-muted-foreground">{{ t('admin.products.form.instructions', { lang: getCurrentLangName() }) }}</label>
+              <div class="flex gap-1.5">
+                <button
+                  v-if="currentLang === 'zh-CN'"
+                  type="button"
+                  :disabled="aiLoading['product_instructions_polish']"
+                  class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs text-muted-foreground border border-border hover:text-primary hover:border-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  @click="aiPolishInstructions"
+                >
+                  <svg v-if="aiLoading['product_instructions_polish']" class="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
+                  <svg v-else class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" opacity="0.9"/></svg>
+                  AI 优化
+                </button>
+                <button
+                  v-if="currentLang !== 'zh-CN'"
+                  type="button"
+                  :disabled="aiLoading['product_translate_instructions']"
+                  class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs text-muted-foreground border border-border hover:text-primary hover:border-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  @click="aiTranslateInstructions"
+                >
+                  <svg v-if="aiLoading['product_translate_instructions']" class="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
+                  <svg v-else class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" opacity="0.9"/></svg>
+                  AI 翻译
+                </button>
+              </div>
+            </div>
             <RichEditor :model-value="form.instructions[currentLang] || ''" @update:model-value="(v: string) => form.instructions[currentLang] = v" :placeholder="t('admin.products.form.instructionsPlaceholder')" />
             <p class="mt-1 text-xs text-muted-foreground">{{ t('admin.products.form.instructionsTip') }}</p>
           </div>
 
           <div class="col-span-1 md:col-span-2">
-            <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.products.form.tags') }}</label>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs font-medium text-muted-foreground">{{ t('admin.products.form.tags') }}</label>
+              <button
+                type="button"
+                :disabled="aiLoading['product_tags']"
+                class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs text-muted-foreground border border-border hover:text-primary hover:border-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                @click="aiGenerateTags"
+              >
+                <svg v-if="aiLoading['product_tags']" class="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
+                <svg v-else class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" opacity="0.9"/></svg>
+                AI 生成标签
+              </button>
+            </div>
             <div class="flex flex-wrap gap-2 mb-2">
               <span v-for="(tag, index) in form.tags" :key="index" class="rounded-lg border border-border px-3 py-1 text-xs text-muted-foreground flex items-center gap-1">
                 {{ tag }}
