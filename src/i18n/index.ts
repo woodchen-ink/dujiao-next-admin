@@ -1218,6 +1218,9 @@ const messages = {
         filters: {
           stockStatusPlaceholder: '库存状态',
           stockStatusAll: '全部库存状态',
+          categoryPlaceholder: '商品分类',
+          categoryAll: '全部分类',
+          categoryQuick: '快捷切换',
         },
         stockStatus: {
           low: '库存不足',
@@ -4377,6 +4380,9 @@ const messages = {
         filters: {
           stockStatusPlaceholder: '庫存狀態',
           stockStatusAll: '全部庫存狀態',
+          categoryPlaceholder: '商品分類',
+          categoryAll: '全部分類',
+          categoryQuick: '快速切換',
         },
         stockStatus: {
           low: '庫存不足',
@@ -7536,6 +7542,9 @@ const messages = {
         filters: {
           stockStatusPlaceholder: 'Stock status',
           stockStatusAll: 'All stock status',
+          categoryPlaceholder: 'Product category',
+          categoryAll: 'All categories',
+          categoryQuick: 'Quick switch',
         },
         stockStatus: {
           low: 'Low stock',

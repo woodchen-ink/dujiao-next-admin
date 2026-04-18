@@ -22,6 +22,7 @@ const { t } = useI18n()
 const loading = ref(false)
 const searchQuery = ref('')
 const stockStatus = ref('all')
+const categoryFilter = ref('__all__')
 const jumpPage = ref('')
 const route = useRoute()
 const router = useRouter()
@@ -198,15 +199,81 @@ const autoStockBadgeClass = (product: AdminProduct) => {
   return 'border-emerald-200 bg-emerald-50 text-emerald-700'
 }
 
+const getQueryString = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return String(value[0] || '')
+  }
+  return typeof value === 'string' ? value : ''
+}
+
+const normalizeRouteStockStatus = (value: unknown) => {
+  const normalized = getQueryString(value).trim().toLowerCase()
+  if (normalized === 'low' || normalized === 'normal' || normalized === 'unlimited') {
+    return normalized
+  }
+  return 'all'
+}
+
+const normalizeRouteCategoryFilter = (value: unknown) => {
+  const num = Number(getQueryString(value).trim())
+  if (Number.isInteger(num) && num > 0) {
+    return String(num)
+  }
+  return '__all__'
+}
+
+const normalizeRoutePage = (value: unknown) => {
+  const num = Number(getQueryString(value))
+  if (!Number.isFinite(num)) return 1
+  return Math.max(Math.floor(num), 1)
+}
+
+const syncListQueryToRoute = () => {
+  const nextSearch = searchQuery.value.trim()
+  const nextStockStatus = stockStatus.value !== 'all' ? stockStatus.value : ''
+  const nextCategoryID = categoryFilter.value !== '__all__' ? categoryFilter.value : ''
+  const nextPage = pagination.page > 1 ? String(pagination.page) : ''
+
+  const currentSearch = getQueryString(route.query.search).trim()
+  const currentStockStatusRaw = normalizeRouteStockStatus(route.query.stock_status)
+  const currentCategoryIDRaw = normalizeRouteCategoryFilter(route.query.category_id)
+  const currentPageRaw = normalizeRoutePage(route.query.page)
+  const currentStockStatus = currentStockStatusRaw === 'all' ? '' : currentStockStatusRaw
+  const currentCategoryID = currentCategoryIDRaw === '__all__' ? '' : currentCategoryIDRaw
+  const currentPage = currentPageRaw > 1 ? String(currentPageRaw) : ''
+
+  if (
+    currentSearch === nextSearch
+    && currentStockStatus === nextStockStatus
+    && currentCategoryID === nextCategoryID
+    && currentPage === nextPage
+  ) {
+    return
+  }
+
+  void router.replace({
+    query: {
+      ...route.query,
+      search: nextSearch || undefined,
+      stock_status: nextStockStatus || undefined,
+      category_id: nextCategoryID || undefined,
+      page: nextPage || undefined,
+    },
+  })
+}
+
 const fetchProducts = async () => {
+  syncListQueryToRoute()
   loading.value = true
   selectedIds.value = new Set()
   try {
+    const normalizedCategoryID = Number(categoryFilter.value)
     const res = await adminAPI.getProducts({
       page: pagination.page,
       page_size: pagination.page_size,
-      search: searchQuery.value,
-      stock_status: stockStatus.value,
+      search: searchQuery.value.trim() || undefined,
+      stock_status: stockStatus.value !== 'all' ? stockStatus.value : undefined,
+      category_id: Number.isInteger(normalizedCategoryID) && normalizedCategoryID > 0 ? normalizedCategoryID : undefined,
     })
     products.value = res.data.data || []
     if (res.data.pagination) {
@@ -244,6 +311,27 @@ const categoryOptions = computed(() => flattenAdminCategories(categories.value).
   selectable: isAdminProductCategorySelectable(item.category, categoryChildCountMap.value),
 })))
 
+const selectableCategoryOptions = computed(() => categoryOptions.value
+  .filter((item) => item.selectable)
+  .map((item) => ({
+    ...item,
+    label: getProductCategoryLabel(item.category),
+  })))
+
+const quickCategoryOptions = computed(() => selectableCategoryOptions.value
+  .map((item) => ({
+    value: String(item.category.id),
+    label: item.label,
+  })))
+
+const handleCategoryFilterChange = (value: unknown) => {
+  const normalized = normalizeRouteCategoryFilter(value)
+  if (normalized === categoryFilter.value) return
+  categoryFilter.value = normalized
+  pagination.page = 1
+  fetchProducts()
+}
+
 const fetchSiteCurrency = async () => {
   try {
     const response = await adminAPI.getSettings({ key: 'site_config' })
@@ -264,6 +352,7 @@ const debouncedSearch = useDebounceFn(handleSearch, 300)
 const resetFilters = () => {
   searchQuery.value = ''
   stockStatus.value = 'all'
+  categoryFilter.value = '__all__'
   pagination.page = 1
   fetchProducts()
   nextTick(() => {
@@ -378,6 +467,11 @@ const saveCategory = async (product: AdminProduct, newCategoryId: unknown) => {
 }
 
 onMounted(() => {
+  searchQuery.value = getQueryString(route.query.search).trim()
+  stockStatus.value = normalizeRouteStockStatus(route.query.stock_status)
+  categoryFilter.value = normalizeRouteCategoryFilter(route.query.category_id)
+  pagination.page = normalizeRoutePage(route.query.page)
+
   fetchProducts()
   fetchCategories()
   fetchSiteCurrency()
@@ -437,9 +531,45 @@ watch(
             </SelectContent>
           </Select>
         </div>
+        <div class="w-full md:w-56">
+          <Select :modelValue="categoryFilter" @update:modelValue="handleCategoryFilterChange">
+            <SelectTrigger class="h-9 w-full">
+              <SelectValue :placeholder="t('admin.products.filters.categoryPlaceholder')" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{{ t('admin.products.filters.categoryAll') }}</SelectItem>
+              <SelectItem
+                v-for="item in quickCategoryOptions"
+                :key="item.value"
+                :value="item.value"
+              >
+                {{ item.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <Button variant="outline" size="sm" class="h-9 w-full sm:w-auto" @click="resetFilters">
           {{ t('admin.common.reset') }}
         </Button>
+      </div>
+      <div v-if="quickCategoryOptions.length > 0" class="mt-3 flex items-center gap-2 overflow-x-auto pb-1">
+        <span class="shrink-0 text-xs font-medium text-muted-foreground">{{ t('admin.products.filters.categoryQuick') }}</span>
+        <button
+          class="shrink-0 rounded-full border px-2.5 py-1 text-xs transition-colors"
+          :class="categoryFilter === '__all__' ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground hover:border-primary hover:text-primary'"
+          @click="handleCategoryFilterChange('__all__')"
+        >
+          {{ t('admin.products.filters.categoryAll') }}
+        </button>
+        <button
+          v-for="item in quickCategoryOptions"
+          :key="item.value"
+          class="shrink-0 rounded-full border px-2.5 py-1 text-xs transition-colors"
+          :class="categoryFilter === item.value ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground hover:border-primary hover:text-primary'"
+          @click="handleCategoryFilterChange(item.value)"
+        >
+          {{ item.label }}
+        </button>
       </div>
     </div>
 
@@ -454,13 +584,12 @@ watch(
             <SelectTrigger class="h-8 w-[160px] text-xs"><SelectValue :placeholder="t('admin.products.batch.categoryPlaceholder')" /></SelectTrigger>
             <SelectContent>
               <SelectItem
-                v-for="item in flattenAdminCategories(categories).map(i => ({ ...i, selectable: isAdminProductCategorySelectable(i.category, categoryChildCountMap) }))"
+                v-for="item in selectableCategoryOptions"
                 :key="item.category.id"
                 :value="String(item.category.id)"
-                :disabled="!item.selectable"
                 :class="item.depth > 0 ? 'pl-6' : ''"
               >
-                {{ item.depth > 0 ? getLocalizedText(item.category.name) : buildAdminCategoryPath(item.category, categoryMap, (c) => getLocalizedText(c.name)) }}
+                {{ item.label }}
               </SelectItem>
             </SelectContent>
           </Select>
@@ -568,13 +697,12 @@ watch(
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem
-                      v-for="item in categoryOptions"
+                      v-for="item in selectableCategoryOptions"
                       :key="item.category.id"
                       :value="String(item.category.id)"
-                      :disabled="!item.selectable"
                       :class="item.depth > 0 ? 'pl-6' : ''"
                     >
-                      {{ item.depth > 0 ? getLocalizedText(item.category.name) : getProductCategoryLabel(item.category) }}
+                      {{ item.label }}
                     </SelectItem>
                   </SelectContent>
                 </Select>
