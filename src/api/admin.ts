@@ -468,5 +468,5 @@ export const adminAPI = {
 
   // AI 辅助生成
   aiGenerate: (action: string, data?: Record<string, unknown>) =>
-    api.post('/admin/ai/generate', { action, data: data ?? {} }),
+    api.post('/admin/ai/generate', { action, data: data ?? {} }, { timeout: 120000 }),
 }
