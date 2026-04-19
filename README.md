@@ -1,6 +1,6 @@
-# CZL Store Admin
+# Sunai Store Admin
 
-CZL Store Admin is the management console for operating products, orders, users, payment channels, and system settings.
+Sunai Store Admin is the management console for operating products, orders, users, payment channels, and system settings.
 
 ## Tech Stack
 
